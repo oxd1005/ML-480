@@ -1,1 +1,120 @@
+import numpy as np
+from scipy.spatial.distance import euclidean
+from sklearn import datasets
+from queue import Queue
+
+# Cluster Feature Class
+class ClusteringFeature:
+    def __init__(self, data_point):
+        self.n = 1  # Number of data points
+        self.linear_sum = np.array(data_point)  # Linear sum of data points
+        self.squared_sum = np.sum(np.square(data_point))  # Squared sum for computing variance
+        self.children = []
+        self.data_points = [data_point]
+
+    def update(self, data_point):
+        self.n += 1
+        self.linear_sum += data_point
+        self.squared_sum += np.sum(np.square(data_point))
+        self.data_points.append(data_point)
+
+    def centroid(self):
+        return self.linear_sum / self.n
+
+    def radius(self):
+        return np.sqrt(self.squared_sum / self.n - np.square(self.centroid()))
+
+    def distance(self, data_point):
+        return euclidean(self.centroid(), data_point)
+
+# CF Node class
+class CFNode:
+    def __init__(self, threshold, is_leaf=True):
+        self.threshold = threshold
+        self.is_leaf = is_leaf
+        self.children = []  # List of ClusteringFeatures or CFNodes
+        self.parent = None
+
+    def insert(self, data_point, adaptive_threshold):
+        # If there are no children, we need to create the first child
+        if not self.children:
+            new_cf = ClusteringFeature(data_point)
+            self.children.append(new_cf)
+            return
+        
+        # Find closest child
+        closest_child = self.find_closest_child(data_point)
+        
+        if self.is_leaf:
+            if closest_child.distance(data_point) < adaptive_threshold:
+                closest_child.update(data_point)
+            else:
+                new_cf = ClusteringFeature(data_point)
+                self.children.append(new_cf)
+                if len(self.children) > self.threshold:
+                    self.split_node()
+        else:
+            closest_child.insert(data_point, adaptive_threshold)
+
+    def find_closest_child(self, data_point):
+        if not self.children:
+            return None
+        closest_child = None
+        min_distance = float('inf')
+        for child in self.children:
+            dist = child.distance(data_point) if isinstance(child, ClusteringFeature) else child.find_closest_child(data_point).distance(data_point)
+            
+            if dist < min_distance:
+                min_distance = dist
+                closest_child = child
+        return closest_child
+
+    def split_node(self):
+        new_node1 = CFNode(self.threshold, self.is_leaf)
+        new_node2 = CFNode(self.threshold, self.is_leaf)
+        for child in self.children:
+            if len(new_node1.children) < len(self.children) // 2:
+                new_node1.children.append(child)
+            else:
+                new_node2.children.append(child)
+        self.children = [new_node1, new_node2]
+    
+    def get_clusters(self):
+        if self.is_leaf:
+            return self.children
+        else:
+            clusters = []
+            for child in self.children:
+                clusters.extend(child.get_clusters())
+            return clusters
+
+# Calculate Adaptive Threshold function
+def calculate_adaptive_threshold(current_memory_usage, max_memory_limit):
+    return max(1, max_memory_limit - current_memory_usage)  # Ensure we always have a threshold of at least 1
+
+# BIRCH class
+class BIRCH:
+    def __init__(self, initial_threshold, max_memory_limit):
+        self.root = CFNode(initial_threshold)
+        self.max_memory_limit = max_memory_limit
+
+    def fit(self, data):
+        for data_point in data:
+            current_memory_usage = self.simulate_memory_usage()  # Simulate memory usage for demo purposes
+            adaptive_threshold = calculate_adaptive_threshold(current_memory_usage, self.max_memory_limit)
+            self.root.insert(data_point, adaptive_threshold)
+
+    def simulate_memory_usage(self):
+        return np.random.randint(1, self.max_memory_limit)  # Randomly simulate memory usage for demonstration
+
+    def get_clusters(self):
+        return self.root.get_clusters()
+
+# Demo Usage
+iris = datasets.load_iris()
+data = iris.data
+birch = BIRCH(initial_threshold=5, max_memory_limit=50)
+birch.fit(data)
+clusters = birch.get_clusters()
+print("Number of clusters:", len(clusters))
 
